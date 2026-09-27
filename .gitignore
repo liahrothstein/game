@@ -1,0 +1,15 @@
+# Build
+build/
+out/
+*.obj
+*.pdb
+*.ilk
+*.exe
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# System
+Thumbs.db
