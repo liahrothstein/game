@@ -1,6 +1,7 @@
 #include <glad/glad.h>
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include "render/Shader.h"
 #include "stb_image.h"
@@ -65,12 +66,19 @@ static bool pollEvents() {
     return true;
 }
 
-static void applyMovement(glm::vec2& pos, float speed) {
+static void applyMovementScreen(glm::vec2& camPos, float speed) {
     const bool* keys = SDL_GetKeyboardState(nullptr);
-    if (keys[SDL_SCANCODE_W]) pos.y -= speed;
-    if (keys[SDL_SCANCODE_S]) pos.y += speed;
-    if (keys[SDL_SCANCODE_A]) pos.x -= speed;
-    if (keys[SDL_SCANCODE_D]) pos.x += speed;
+    glm::vec2 dir{0.0f, 0.0f};
+    if (keys[SDL_SCANCODE_W]) dir += glm::vec2{0.0f, -1.0f};   // явный тип
+    if (keys[SDL_SCANCODE_S]) dir += glm::vec2{0.0f,  1.0f};
+    if (keys[SDL_SCANCODE_A]) dir += glm::vec2{-1.0f, 0.0f};
+    if (keys[SDL_SCANCODE_D]) dir += glm::vec2{ 1.0f, 0.0f};
+    // Поворот на -45° (обратный к повороту изометрической камеры)
+    float s = 0.70710678f;
+    glm::vec2 world;
+    world.x = dir.x * s - dir.y * s;
+    world.y = dir.x * s + dir.y * s;
+    camPos += world * speed;
 }
 
 struct Quad {
@@ -81,11 +89,14 @@ struct Quad {
 static void initQuad(Quad& q, const char* pngPath) {
     q.shader.build(
         R"(#version 330 core
-           layout(location=0) in vec2 aPos;
+           layout(location=0) in vec2 aPos;   // квад в плоскости XZ: (x, z)
            layout(location=1) in vec2 aUV;
-           uniform vec2 uPos;
+           uniform mat4 uProj, uView, uModel;
            out vec2 vUV;
-           void main() { vUV = aUV; gl_Position = vec4(aPos + uPos, 0.0, 1.0); })",
+           void main() {
+               vUV = aUV;
+               gl_Position = uProj * uView * uModel * vec4(aPos.x, 0.0, aPos.y, 1.0);
+           })",
         R"(#version 330 core
            in vec2 vUV;
            uniform sampler2D uTex;
@@ -136,6 +147,21 @@ static void drawQuad(const Quad& q, const glm::vec2& screenPos) {
     glBindTexture(GL_TEXTURE_2D, q.tex);
     glBindVertexArray(q.vao);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
+}
+
+static glm::mat4 makeProj() {
+    int w = WINDOW_W, h = WINDOW_H;
+    SDL_GetWindowSizeInPixels(g_window, &w, &h);   // SDL3
+    float aspect = (float)w / (float)h;
+    return glm::ortho(-4.0f * aspect, 4.0f * aspect, -4.0f, 4.0f, 0.1f, 100.0f);
+}
+
+static glm::mat4 makeView(const glm::vec2& camPos) {
+    // Глаз: над точкой camPos, смещён назад-вверх (изометрический угол ~43°)
+    glm::vec3 eye  (camPos.x + 6.0f, 8.0f, camPos.y + 6.0f);
+    glm::vec3 center(camPos.x, 0.0f, camPos.y);   // смотрим на точку на земле
+    glm::vec3 up   (0.0f, 1.0f, 0.0f);
+    return glm::lookAt(eye, center, up);
 }
 
 // ══════════════════════════════════════════════════════
@@ -197,18 +223,32 @@ static void endFrame(SDL_Window* w) { SDL_GL_SwapWindow(w); }
 int main(int, char**) {
     if (!initPlatform()) { shutdownPlatform(); return 1; }
 
-    Quad quad;                                                   // ← было Triangle tri
+    // ─── GPU-ресурсы: квад (создаётся ОДИН раз) ───
+    Quad quad;
     initQuad(quad, R"(D:\Development\game\assets\test.png)");
 
-    glm::vec2 pos{HALF_W, HALF_H};
+    // ─── Камера ───
+    glm::vec2 camPos{0.0f, 0.0f};
+
     bool running = true;
     while (running) {
-        running = pollEvents();       // события + Esc/крестик
-        applyMovement(pos, 2.0f);     // WASD
-        std::cout << "pos: " << pos.x << ", " << pos.y << "\n";
+        running = pollEvents();
+        applyMovementScreen(camPos, 0.15f);     // WASD двигает КАМЕРУ (метры)
 
         beginFrame();
-        drawQuad(quad, pos);
+
+        glm::mat4 proj  = makeProj();
+        glm::mat4 view  = makeView(camPos);
+        glm::mat4 model = glm::mat4(1.0f);
+
+        quad.shader.use();
+        quad.shader.setMat4("uProj", proj);
+        quad.shader.setMat4("uView", view);
+        quad.shader.setMat4("uModel", model);
+        glBindTexture(GL_TEXTURE_2D, quad.tex);
+        glBindVertexArray(quad.vao);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
+
         endFrame(g_window);
     }
 
