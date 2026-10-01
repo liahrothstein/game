@@ -11,5 +11,6 @@ find_package(glad CONFIG REQUIRED)
 add_executable(game
   src/main.cpp
   src/render/Shader.cpp
+  src/stb_impl.cpp
 )
 target_link_libraries(game PRIVATE SDL3::SDL3 glm::glm glad::glad opengl32)
