@@ -14,6 +14,8 @@ add_executable(game
   src/cgltf_impl.cpp
   src/render/Shader.cpp
   src/render/Camera.cpp
+  src/render/Mesh.cpp
+  src/assets/GltfLoader.cpp
   src/platform/Window.cpp
   src/game/Game.cpp
 )

@@ -1,6 +1,32 @@
 #include "game/Game.h"
 #include "stb_image.h"
+#include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
+
+static const char* MESH_VS = R"(#version 330 core
+    layout(location=0) in vec3 aPos;
+    layout(location=1) in vec3 aNormal;
+    layout(location=2) in vec2 aUV;
+    uniform mat4 uProj, uView, uModel;
+    out vec3 vNormal;
+    out vec2 vUV;
+    void main() {
+        vNormal = normalize(mat3(uModel) * aNormal);
+        vUV = aUV;
+        gl_Position = uProj * uView * uModel * vec4(aPos, 1.0);
+    })";
+
+static const char* MESH_FS = R"(#version 330 core
+    in vec3 vNormal;
+    in vec2 vUV;
+    uniform sampler2D uTex;
+    out vec4 FragColor;
+    void main() {
+        vec3 lightDir = normalize(vec3(0.5, 1.0, 0.6));
+        float lambert = max(dot(normalize(vNormal), lightDir), 0.0);
+        vec3 base = texture(uTex, vUV).rgb;          // цвет из текстуры!
+        FragColor = vec4(base * (0.35 + 0.65 * lambert), 1.0);
+    })";
 
 static void applyMovementScreen(glm::vec2& camPos, float speed) {
     const bool* keys = SDL_GetKeyboardState(nullptr);
@@ -16,7 +42,11 @@ static void applyMovementScreen(glm::vec2& camPos, float speed) {
 
 bool Game::init() {
     if (!window.init("Kosti i Pepel — dev", 1280, 720)) return false;
-    return initQuad(R"(D:\Development\game\assets\test.png)");
+
+    glEnable(GL_DEPTH_TEST);                    // КРИТИЧНО для 3D
+
+    if (!initQuad(R"(D:\Development\game\assets\test.png)")) return false;
+    return loadIdol(R"(D:\Development\game\assets\idol_hooded_r1.glb)");
 }
 
 bool Game::initQuad(const char* pngPath) {
@@ -66,15 +96,56 @@ bool Game::initQuad(const char* pngPath) {
     return true;
 }
 
-void Game::drawQuad() {
-    float aspect = (float)window.width / (float)window.height;   // ← новая строка
+bool Game::loadIdol(const char* glbPath) {
+    meshShader.build(MESH_VS, MESH_FS);
+    if (!GltfLoader::loadFirstMesh(glbPath, idolMesh)) return false;
+
+    std::vector<unsigned char> pixels;
+    int w, h, n;
+    if (!GltfLoader::loadFirstImage(glbPath, pixels)) {
+        std::cerr << "gltf: embedded image not found\n";
+        return false;
+    }
+    stbi_set_flip_vertically_on_load(true);
+    unsigned char* decoded = stbi_load_from_memory(
+        pixels.data(), (int)pixels.size(), &w, &h, &n, 0);
+    if (!decoded) { std::cerr << "stbi decode failed\n"; return false; }
+
+    glGenTextures(1, &idolTex);
+    glBindTexture(GL_TEXTURE_2D, idolTex);
+    GLenum fmt = (n == 4) ? GL_RGBA : GL_RGB;
+    glTexImage2D(GL_TEXTURE_2D, 0, fmt, w, h, 0, fmt, GL_UNSIGNED_BYTE, decoded);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    stbi_image_free(decoded);
+    return true;
+}
+
+void Game::drawQuad(float aspect) {
     quadShader.use();
-    quadShader.setMat4("uProj",  camera.proj(aspect));           // ← аспект передаётся
+    quadShader.setMat4("uProj",  camera.proj(aspect));
     quadShader.setMat4("uView",  camera.view());
     quadShader.setMat4("uModel", glm::mat4(1.0f));
     glBindTexture(GL_TEXTURE_2D, quadTex);
     glBindVertexArray(quadVao);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
+}
+
+void Game::drawIdol(float aspect) {
+    meshShader.use();
+    meshShader.setMat4("uProj",  camera.proj(aspect));
+    meshShader.setMat4("uView",  camera.view());
+
+    // Конвейерный фикс ориентации: меши asset-forge (Blender Z-up)
+    // в glTF лежат «на спине» — вариант 2 ставит их вертикально
+    glm::mat4 m = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1,0,0));
+    // Подъём из пола при необходимости (подберите число по глазу):
+    // m = glm::translate(m, glm::vec3(0.0f, 0.2f, 0.0f));
+
+    meshShader.setMat4("uModel", m);
+    glBindTexture(GL_TEXTURE_2D, idolTex);
+    idolMesh.draw();
 }
 
 void Game::run() {
@@ -86,15 +157,27 @@ void Game::run() {
                 running = false;
         }
         applyMovementScreen(camera.pos, 0.15f);
+        const bool* keys = SDL_GetKeyboardState(nullptr);
+        static int orientMode = 4;
+        if (keys[SDL_SCANCODE_1]) orientMode = 1;
+        if (keys[SDL_SCANCODE_2]) orientMode = 2;
+        if (keys[SDL_SCANCODE_3]) orientMode = 3;
+        if (keys[SDL_SCANCODE_4]) orientMode = 4;
 
         window.pollSize();
+        float aspect = (float)window.width / (float)window.height;
+
         glViewport(0, 0, window.width, window.height);
         glClearColor(0.05f, 0.05f, 0.06f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);   // +depth!
 
-        drawQuad();
+        drawQuad(aspect);
+        drawIdol(aspect);     // идол стоит в центре (0,0,0) — квад на полу под ним
+
         window.swap();
     }
 }
 
-void Game::shutdown() { /* GL-ресурсы освобождаются с контекстом; окно ниже */ }
+void Game::shutdown() {
+    idolMesh.shutdown();
+}
