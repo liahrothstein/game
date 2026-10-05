@@ -28,6 +28,11 @@ private:
     Shader meshShader;
     Mesh idolMesh;
     GLuint idolTex = 0;   // рядом с Mesh idolMesh;
+    Shader groundShader;
+    GLuint groundTex = 0;
+    Mesh groundMesh;
+    bool initGround();
+    void drawGround(float aspect);
     bool loadIdol(const char* glbPath);
     void drawIdol(float aspect);
 

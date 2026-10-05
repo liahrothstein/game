@@ -40,12 +40,45 @@ static void applyMovementScreen(glm::vec2& camPos, float speed) {
     camPos.y += (dir.x * s + dir.y * s) * speed;
 }
 
+static GLuint makeAshTexture() {
+    const int S = 512;
+    std::vector<unsigned char> px(S * S * 3);
+    srand(42);
+    for (int i = 0; i < S * S; ++i) {
+        unsigned char g = 40 + rand() % 26;
+        px[i*3+0] = g; px[i*3+1] = g; px[i*3+2] = g;
+    }
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, S, S, 0, GL_RGB, GL_UNSIGNED_BYTE, px.data());
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    return tex;
+}
+
+static Mesh makeGround() {
+    std::vector<Vertex> verts;
+    glm::vec3 p[4] = { {-20,0,-20}, {20,0,-20}, {20,0,20}, {-20,0,20} };
+    glm::vec2 u[4] = { {0,8}, {8,8}, {8,0}, {0,0} };
+    for (int i = 0; i < 4; ++i)
+        verts.push_back({ p[i], {0,1,0}, u[i] });
+    std::vector<GLuint> idx = { 0,1,2, 0,2,3 };
+    Mesh m;
+    m.build(verts, idx);
+    return m;
+}
+
 bool Game::init() {
     if (!window.init("Kosti i Pepel — dev", 1280, 720)) return false;
 
     glEnable(GL_DEPTH_TEST);                    // КРИТИЧНО для 3D
 
     if (!initQuad(R"(D:\Development\game\assets\test.png)")) return false;
+    initGround();
     return loadIdol(R"(D:\Development\game\assets\idol_hooded_r1.glb)");
 }
 
@@ -148,6 +181,35 @@ void Game::drawIdol(float aspect) {
     idolMesh.draw();
 }
 
+bool Game::initGround() {
+    groundShader.build(
+        R"(#version 330 core
+           layout(location=0) in vec3 aPos;
+           layout(location=1) in vec3 aNormal;
+           layout(location=2) in vec2 aUV;
+           uniform mat4 uProj, uView, uModel;
+           out vec2 vUV;
+           void main() { vUV = aUV;
+               gl_Position = uProj * uView * uModel * vec4(aPos, 1.0); })",
+        R"(#version 330 core
+           in vec2 vUV;
+           uniform sampler2D uTex;
+           out vec4 FragColor;
+           void main() { FragColor = texture(uTex, vUV); })");
+    groundTex = makeAshTexture();
+    groundMesh = makeGround();
+    return true;
+}
+
+void Game::drawGround(float aspect) {
+    groundShader.use();
+    groundShader.setMat4("uProj",  camera.proj(aspect));
+    groundShader.setMat4("uView",  camera.view());
+    groundShader.setMat4("uModel", glm::mat4(1.0f));
+    glBindTexture(GL_TEXTURE_2D, groundTex);
+    groundMesh.draw();
+}
+
 void Game::run() {
     while (running) {
         SDL_Event e;
@@ -170,6 +232,7 @@ void Game::run() {
         glViewport(0, 0, window.width, window.height);
         glClearColor(0.05f, 0.05f, 0.06f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);   // +depth!
+        drawGround(aspect);
 
         drawQuad(aspect);
         drawIdol(aspect);     // идол стоит в центре (0,0,0) — квад на полу под ним
