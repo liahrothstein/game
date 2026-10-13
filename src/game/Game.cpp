@@ -79,7 +79,13 @@ bool Game::init() {
 
     if (!initQuad(R"(D:\Development\game\assets\test.png)")) return false;
     initGround();
-    return loadIdol(R"(D:\Development\game\assets\idol_hooded_r1.glb)");
+    // загружаем три объекта сцены
+    if (!loadObject(R"(D:\Development\game\assets\idol_hooded_r1.glb)", {0.0f,0.0f,0.0f}, 0.0f)) return false;
+    if (!loadObject(R"(D:\Development\game\assets\altar01.glb)",        {2.5f,0.0f,-1.0f}, 15.0f)) return false;
+    if (!loadObject(R"(D:\Development\game\assets\tombstone01.glb)",    {-2.0f,0.0f,1.5f}, -30.0f)) return false;
+    if (!loadObject(R"(D:\Development\game\assets\tombstone02.glb)",    {-2.6f,0.0f,2.3f}, 10.0f)) return false;
+    if (!loadObject(R"(D:\Development\game\assets\nec_skull_candle01.glb)", {-1.2f,0.0f,-0.8f}, 0.0f)) return false;
+    return true;
 }
 
 bool Game::initQuad(const char* pngPath) {
@@ -210,6 +216,61 @@ void Game::drawGround(float aspect) {
     groundMesh.draw();
 }
 
+// ---------------------------------------------
+// загружает объект из glb, создаёт текстуру и добавляет в vector objects
+bool Game::loadObject(const char* glbPath, glm::vec3 pos, float yawDeg) {
+    SceneObject obj;
+    obj.pos = pos;
+    obj.yawDeg = yawDeg;
+    // загрузить меш
+    if (!GltfLoader::loadFirstMesh(glbPath, obj.mesh)) {
+        std::cerr << "gltf: failed to load mesh: " << glbPath << "\n";
+        return false;
+    }
+    // загрузить embedded image
+    std::vector<unsigned char> imgData;
+    if (!GltfLoader::loadFirstImage(glbPath, imgData)) {
+        std::cerr << "gltf: embedded image not found: " << glbPath << "\n";
+        return false;
+    }
+    int w, h, n;
+    stbi_set_flip_vertically_on_load(true);
+    unsigned char* texData = stbi_load_from_memory(imgData.data(), (int)imgData.size(), &w, &h, &n, 0);
+    if (!texData) {
+        std::cerr << "stbi: failed to load image from memory: " << glbPath << "\n";
+        return false;
+    }
+    glGenTextures(1, &obj.tex);
+    glBindTexture(GL_TEXTURE_2D, obj.tex);
+    GLenum fmt = (n == 4) ? GL_RGBA : GL_RGB;
+    glTexImage2D(GL_TEXTURE_2D, 0, fmt, w, h, 0, fmt, GL_UNSIGNED_BYTE, texData);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    stbi_image_free(texData);
+    // add to scene
+    objects.push_back(std::move(obj));
+    return true;
+}
+
+// ---------------------------------------------
+// отрисовка всей сцены
+void Game::drawScene(float aspect) {
+    meshShader.use();
+    meshShader.setMat4("uProj", camera.proj(aspect));
+    meshShader.setMat4("uView", camera.view());
+    for (const auto& obj : objects) {
+        glm::mat4 m = glm::translate(glm::mat4(1.0f), obj.pos);
+        m = glm::rotate(m, glm::radians(obj.yawDeg), glm::vec3(0.0f, 1.0f, 0.0f));
+        m = glm::rotate(m, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        meshShader.setMat4("uModel", m);
+        glBindTexture(GL_TEXTURE_2D, obj.tex);
+        obj.mesh.draw();
+    }
+}
+
 void Game::run() {
     while (running) {
         SDL_Event e;
@@ -233,9 +294,7 @@ void Game::run() {
         glClearColor(0.05f, 0.05f, 0.06f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);   // +depth!
         drawGround(aspect);
-
-        drawQuad(aspect);
-        drawIdol(aspect);     // идол стоит в центре (0,0,0) — квад на полу под ним
+        drawScene(aspect);    // отрисовка всех объектов сцены
 
         window.swap();
     }

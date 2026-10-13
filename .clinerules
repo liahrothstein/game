@@ -1,0 +1,40 @@
+C++20, CMake (vcpkg manifest — vcpkg.json), сборка: cmake --build build --config Release
+SDL3 (окно/ввод), glad (GL-лоадер), glm (математика), OpenGL 3.3 core
+cgltf (glTF-лоадер, single-header; реализация в src/cgltf_impl.cpp)
+stb_image (текстуры; реализация в src/stb_impl.cpp)
+
+ЗАПРЕЩЕНО: GLEW, GLFW, glfw*, любые #include <GL/glew.h> / <GLFW/*>
+ЗАПРЕЩЕНО: GLSL-файлы (.glsl/.vert/.frag) — шейдеры ТОЛЬКО raw-строками(R"(#version 330 core ...)") внутри C++ кода
+ЗАПРЕЩЕНО: менять существующие сигнатуры методов без прямого указания
+ЗАПРЕЩЕНО: создавать новые циклы main/render — редактировать толькосуществующий Game::run()
+ЗАПРЕЩЕНО: вводить новые библиотеки/зависимости без прямого указания
+ЗАПРЕЩЕНО: трогать orient-fix (rotate 90° вокруг X в drawIdol/drawScene)и камеру-изометрию (lookAt), если задача этого прямо не требует
+
+gl_Position = uProj * uView * uModel * vec4(aPos, 1.0);
+
+Матрицы передаются uniform'ами: uProj, uView, uModel (setMat4)
+Атрибуты вершин: location 0 = vec3 position, 1 = vec3 normal, 2 = vec2 uv
+Vertex (interleaved): struct { glm::vec3 pos; glm::vec3 normal; glm::vec2 uv; }
+Один VAO/VBO/EBO на меш; EBO — GL_UNSIGNED_INT
+Текстуры: stbi_load/stbi_load_from_memory, stbi_set_flip_vertically_on_load(true),GL_RGBA/GL_RGB по каналам, mipmap, LINEAR фильтры
+
+src/├── main.cpp — тонкий orchestration├── game/Game.h/.cpp — игровое состояние, цикл, draw-методы├── render/Shader.h/.cpp — компиляция шейдеров├── render/Mesh.h/.cpp — VAO/VBO/EBO обёртка├── render/Camera.h/.cpp — lookAt-изометрия (ortho)├── assets/GltfLoader.h/.cpp — GLB-лоадер└── platform/Window.h/.cpp — SDL-окно/контекстАссеты данных: assets/.glb, assets/.png (корень, НЕ src)
+
+Game: init(), run(), shutdown(), drawQuad(float aspect), drawIdol(float aspect)
+GltfLoader::loadFirstMesh(string path, Mesh& out) — первый mesh/primitive
+GltfLoader::loadFirstImage(string path, vector&) — embedded image
+Camera: glm::mat4 proj(float aspect) const; glm::mat4 view() const; vec2 pos
+
+Ассеты из Blender-конвейера Z-up: model-матрица требует rotate(90°, X)(orient mode 2 — проверено экспериментально) — не удалять
+glClear: GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT; glEnable(GL_DEPTH_TEST) в init
+Координаты: GL Y-up, метры; камера-изометрия: eye offset (+6, +8, +6)
+Тексты/комментарии кода — на английском; пользовательская документация — на русском
+
+Отвечай: фрагменты кода + точные места вставки (файл/функция/до-или-после-чего)
+Никаких длинных рассуждений — максимум 3 строки комментария к блоку
+Если нужный API не найден в файлах — СКАЖИ об этом, не выдумывай сигнатуры
+Если old_text не совпадает при правке — не повторяй ту же правку; предложизаменить больший уникальный блок или напиши файл заново
+После завершения опиши ожидаемую картину на экране (контрольная точка)
+Каждая задача заканчивается инструкцией по сборке и проверке
+
+Дарк-фэнтези выживание, изометрия 45°, зоны/переходы, бартер, рандомный лутпо фиксированному миру. Ассеты — из собственного ML-конвейера (asset-forge),стиль: slightly stylized 3d render, dark fantasy, приглушённые тона.Текущая сцена: пепельная земля 40×40м (процедурный шум), тест-квад, идол.

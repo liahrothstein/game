@@ -7,6 +7,7 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <string>
+#include <vector>
 
 class Game {
 public:
@@ -35,6 +36,20 @@ private:
     void drawGround(float aspect);
     bool loadIdol(const char* glbPath);
     void drawIdol(float aspect);
+
+    // --- сцена ---
+    struct SceneObject {
+        Mesh mesh;
+        GLuint tex = 0;
+        glm::vec3 pos;
+        float yawDeg = 0.0f;
+    };
+    std::vector<SceneObject> objects;
+
+    // загружает объект и добавляет в сцену
+    bool loadObject(const char* glbPath, glm::vec3 pos, float yawDeg);
+    // отрисовывает всю сцену
+    void drawScene(float aspect);
 
     bool running = true;
 };
